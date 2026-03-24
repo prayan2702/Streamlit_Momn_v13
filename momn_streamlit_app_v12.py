@@ -38,23 +38,68 @@ try:
 except ImportError:
     _CALCS_AVAILABLE = False
 
+import yfinance as yf  # always available (in requirements.txt)
+
+# ── data_service (may fail if SmartApi/pyotp not installed) ───
+_DS_AVAILABLE   = False
+_DS_IMPORT_ERR  = ""
 try:
     from data_service import fetch_data
     _DS_AVAILABLE = True
-except ImportError:
-    _DS_AVAILABLE = False
+except Exception as _e:
+    _DS_IMPORT_ERR = str(_e)
 
+# ── upstox_auth ───────────────────────────────────────────────
+_UPSTOX_AVAILABLE = False
 try:
     from upstox_auth import get_upstox_access_token
     _UPSTOX_AVAILABLE = True
-except ImportError:
-    _UPSTOX_AVAILABLE = False
+except Exception:
+    pass
 
+# ── angelone_auth ─────────────────────────────────────────────
+_ANGEL_AVAILABLE = False
 try:
     from angelone_auth import get_angelone_client
     _ANGEL_AVAILABLE = True
-except ImportError:
-    _ANGEL_AVAILABLE = False
+except Exception:
+    pass
+
+# ── Inline YFinance fetcher (fallback when data_service fails) ─
+def _fetch_yfinance_inline(symbols_ns, start_date, end_date,
+                            progress_bar, status_text, chunk_size=15):
+    """Pure yfinance fetch — no data_service dependency."""
+    close_chunks, high_chunks, vol_chunks = [], [], []
+    failed = []
+    total  = len(symbols_ns)
+    for k in range(0, total, chunk_size):
+        chunk = symbols_ns[k:k + chunk_size]
+        pct   = min((k + chunk_size) / total, 1.0)
+        status_text.markdown(f"⏳ **Fetching {k+1}–{min(k+chunk_size, total)} / {total}**")
+        progress_bar.progress(pct * 0.88)
+        try:
+            raw = yf.download(chunk, start=start_date, end=end_date,
+                              progress=False, auto_adjust=True, threads=True,
+                              multi_level_index=False)
+            if not raw.empty:
+                close_chunks.append(raw["Close"])
+                high_chunks.append(raw["High"])
+                vol_val = raw["Close"].multiply(raw.get("Volume", 1))
+                vol_chunks.append(vol_val)
+        except Exception as e:
+            failed.extend(chunk)
+        time.sleep(0.5)
+
+    if not close_chunks:
+        return None, None, None, failed
+
+    close  = pd.concat(close_chunks,  axis=1)
+    high   = pd.concat(high_chunks,   axis=1)
+    volume = pd.concat(vol_chunks,    axis=1)
+    close  = close.loc[:,  ~close.columns.duplicated()]
+    high   = high.loc[:,   ~high.columns.duplicated()]
+    volume = volume.loc[:, ~volume.columns.duplicated()]
+    return close, high, volume, failed
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -622,8 +667,11 @@ elif st.session_state.current_step == 2:
         st.error("❌ `calculations.py` not found. Project folder mein rakh kar dobara run karo.")
         st.stop()
     if not _DS_AVAILABLE:
-        st.error("❌ `data_service.py` not found. Project folder mein rakh kar dobara run karo.")
-        st.stop()
+        st.warning(
+            f"⚠️ `data_service.py` import failed (reason: `{_DS_IMPORT_ERR[:120]}`). "
+            "**YFinance** inline fallback use hoga. "
+            "Upstox/Angel One ke liye `pyotp` + `smartapi-python` ko `requirements.txt` mein add karo."
+        )
 
     # ── Filter settings ───────────────────────────────────────
     with st.expander("🔧 Filter Settings", expanded=True):
@@ -687,16 +735,25 @@ elif st.session_state.current_step == 2:
         prog_bar = st.progress(0)
         status_tx = st.empty()
 
+        # Use data_service if available AND source is not YFinance or is non-YF
+        _use_ds = _DS_AVAILABLE and api_source in ("Upstox", "Angel One")
         try:
-            close, high, volume, failed_symbols = fetch_data(
-                api_source   = api_source,
-                symbols      = symbols,
-                start_date   = dates['startDate'],
-                end_date     = dates['endDate'],
-                chunk_size   = CHUNK,
-                progress_bar = prog_bar,
-                status_text  = status_tx,
-            )
+            if _use_ds:
+                close, high, volume, failed_symbols = fetch_data(
+                    api_source   = api_source,
+                    symbols      = symbols,
+                    start_date   = dates['startDate'],
+                    end_date     = dates['endDate'],
+                    chunk_size   = CHUNK,
+                    progress_bar = prog_bar,
+                    status_text  = status_tx,
+                )
+            else:
+                # YFinance inline fallback (always works)
+                close, high, volume, failed_symbols = _fetch_yfinance_inline(
+                    symbols, dates['startDate'], dates['endDate'],
+                    prog_bar, status_tx, chunk_size=CHUNK
+                )
         except Exception as e:
             st.error(f"Data fetch error: {e}"); st.stop()
 
