@@ -28,7 +28,7 @@ streamlit run momn_streamlit_app_v11.py
 | 4 | Excel export + Apps Script checklist |
 
 ## Google Sheet
-Rebalance published sheet: https://docs.google.com/spreadsheets/d/1xb8xoW91HWeXBW8Zd99TobULSgwxcvfPaaYPlMLZmHI
+Rebalance published sheet:
 - Column A: Worst Rank Held (exit candidates)  
 - Column B: Current Portfolio (held stocks)
 
