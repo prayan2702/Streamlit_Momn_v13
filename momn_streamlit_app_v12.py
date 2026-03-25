@@ -1075,9 +1075,9 @@ elif st.session_state.current_step == 3:
 
         wa1, wa2 = st.columns([1, 1])
         with wa1:
-            st.markdown("**📋 Sell Stocks (Worst Rank Held ke liye copy karo):**")
+            st.markdown("**📋 Worst Rank List (Worst Rank Held ke liye copy karo):**")
             st.text_area(
-                "Sell list — Google Sheet Worst Rank Held column mein paste karo",
+                "Worst Rank List — Google Sheet Worst Rank Held column mein paste karo",
                 value=sell_text,
                 height=min(120, max(60, len(sell_list_local) * 22)),
                 key="sell_copy_area",
