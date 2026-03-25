@@ -543,14 +543,18 @@ with st.sidebar:
         if _UPSTOX_AVAILABLE:
             get_upstox_access_token(sidebar=True)
         else:
-            st.error("upstox_auth.py not found")
+            st.warning("⚠️ `pyotp` install nahi hai. YFinance fallback use hoga.")
 
     elif st.session_state.data_source == "Angel One":
         st.divider()
         if _ANGEL_AVAILABLE:
             get_angelone_client(sidebar=True)
         else:
-            st.error("angelone_auth.py not found")
+            st.warning(
+                "⚠️ Angel One ke liye `smartapi-python` + `pyotp` "
+                "`requirements.txt` mein add karo. "
+                "Abhi **YFinance** fallback use hoga."
+            )
 
     st.divider()
     st.markdown("### 🔗 Quick Links")
@@ -1007,32 +1011,94 @@ elif st.session_state.current_step == 3:
 
         st.divider()
 
-        # ── Quick Rebalance Panel ──────────────────────────────
-        st.markdown('<div class="section-hdr">⚡ Quick Rebalance — Order Calculator</div>', unsafe_allow_html=True)
-        st.caption("Sell value + capital add se net pool nikalo → per-stock allocation aur buy qty calculate karo")
+        # ══════════════════════════════════════════════════════════
+        # WORKFLOW PANEL — Screener → Rebalancer → Order Calculator
+        # ══════════════════════════════════════════════════════════
+        st.markdown('<div class="section-hdr">🔄 Rebalancer Workflow</div>', unsafe_allow_html=True)
+
+        # ── Step A: Copy Worst Rank / Sell list for Sheet ─────────
+        sell_list_local = exit_stocks.dropna().tolist()
+        buy_list_local  = entry_stocks.dropna().tolist()
 
         cmp_map3 = {}
         if dfStats is not None:
             cmp_map3 = dict(zip(dfStats['Ticker'], dfStats['Close']))
 
+        # Sell stocks as newline text for easy paste
+        sell_text = "\n".join(sell_list_local) if sell_list_local else "(koi sell nahi)"
+
+        st.markdown("""
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;
+                    padding:14px 18px;margin:8px 0;font-size:13px;line-height:2;">
+        <b>📋 Workflow Steps:</b><br>
+        <b>1.</b> Neeche sell stocks copy karo → Google Sheet ke <b>"Worst Rank Held"</b> column mein paste karo<br>
+        <b>2.</b> <b>"Open Portfolio Rebalancer"</b> button se rebalancer open karo<br>
+        <b>3.</b> Rebalancer mein sell stocks select karo → actual sell value note karo<br>
+        <b>4.</b> Woh sell value neeche <b>"Sell Value"</b> field mein enter karo → Buy orders auto-calculate honge
+        </div>
+        """, unsafe_allow_html=True)
+
+        wa1, wa2 = st.columns([1, 1])
+        with wa1:
+            st.markdown("**📋 Sell Stocks (Worst Rank Held ke liye copy karo):**")
+            st.text_area(
+                "Sell list — Google Sheet Worst Rank Held column mein paste karo",
+                value=sell_text,
+                height=min(120, max(60, len(sell_list_local) * 22)),
+                key="sell_copy_area",
+                label_visibility="collapsed",
+                help="Yeh text copy karo aur Google Sheet ke Worst Rank Held column mein paste karo"
+            )
+            # JS clipboard copy button
+            sell_js_text = sell_text.replace("\n", "\\n").replace("'", "\\'")
+            st.markdown(f"""
+            <button onclick="navigator.clipboard.writeText('{sell_js_text}').then(()=>this.textContent='✅ Copied!').catch(()=>alert('Manual copy karo'))"
+                style="background:#2563eb;color:white;border:none;padding:7px 18px;
+                       border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;">
+                📋 Copy to Clipboard
+            </button>
+            """, unsafe_allow_html=True)
+
+        with wa2:
+            st.markdown("**⚖️ Portfolio Rebalancer:**")
+            st.markdown(f"""
+            <a href="{APPS_SCRIPT_URL}" target="_blank">
+            <div style="background:#1a237e;color:white;padding:12px 20px;border-radius:8px;
+                        text-align:center;font-weight:700;font-size:14px;margin:4px 0;
+                        cursor:pointer;text-decoration:none;">
+              ⚖️ Open Portfolio Rebalancer
+            </div></a>
+            <div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.6;">
+              Wahan se sell karke <b>actual sell value</b> note karo.<br>
+              Phir neeche woh value enter karo.
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.divider()
+
+        # ── Step B: Order Calculator ───────────────────────────────
+        st.markdown('<div class="section-hdr">⚡ Order Calculator</div>', unsafe_allow_html=True)
+
         qr1, qr2, qr3, qr4 = st.columns(4)
         with qr1:
-            capital_add = st.number_input("💰 Capital Addition ₹", min_value=0, value=0, step=5000, key="qr_cap")
+            capital_add = st.number_input(
+                "💰 Capital Addition ₹", min_value=0, value=0, step=5000, key="qr_cap"
+            )
         with qr2:
-            brokerage = st.number_input("🏦 Brokerage/Stock ₹", min_value=0, value=0, step=10, key="qr_brk")
+            brokerage = st.number_input(
+                "🏦 Brokerage/Stock ₹", min_value=0, value=0, step=10, key="qr_brk"
+            )
         with qr3:
-            # Sell value = user-entered (CMP-based default shown as hint)
-            hint_sell = sum([cmp_map3.get(s, 0) for s in sell_list])
             sell_val_input = st.number_input(
-                "💸 Sell Value ₹ (total)",
-                min_value=0, value=int(hint_sell), step=1000, key="qr_sell",
-                help=f"CMP-based estimate: ₹{hint_sell:,.0f}"
+                "💸 Sell Value ₹ (Rebalancer se enter karo)",
+                min_value=0, value=0, step=1000, key="qr_sell",
+                help="Portfolio Rebalancer mein jo actual sell value mili, woh yahaan enter karo"
             )
 
-        sell_brk    = len(sell_list)  * brokerage
-        buy_brk     = len(buy_list)   * brokerage
-        net_pool    = sell_val_input + capital_add - sell_brk - buy_brk
-        per_stock   = net_pool / len(buy_list) if buy_list else 0
+        sell_brk  = len(sell_list_local) * brokerage
+        buy_brk   = len(buy_list_local)  * brokerage
+        net_pool  = sell_val_input + capital_add - sell_brk - buy_brk
+        per_stock = net_pool / len(buy_list_local) if buy_list_local else 0
 
         with qr4:
             st.markdown(f"""<div class="metric-card">
@@ -1050,12 +1116,15 @@ elif st.session_state.current_step == 3:
           <div class="reb-stat"><div class="label">Per Stock</div><div class="val g">{fmt_inr(per_stock)}</div></div>
         </div>""", unsafe_allow_html=True)
 
-        # Buy orders table
-        if buy_list and per_stock > 0:
+        if sell_val_input == 0 and not capital_add:
+            st.info("💡 Sell Value enter karo (Portfolio Rebalancer se) → Buy orders auto-calculate honge.")
+
+        # ── Buy orders table ────────────────────────────────────────
+        if buy_list_local and per_stock > 0:
             st.markdown('<div class="section-hdr">📋 Buy Orders (Estimated)</div>', unsafe_allow_html=True)
             orders = []
             total_invested = 0
-            for i, stock in enumerate(buy_list, 1):
+            for i, stock in enumerate(buy_list_local, 1):
                 cmp = cmp_map3.get(stock, 0)
                 if cmp > 0:
                     qty = int(per_stock / cmp)
