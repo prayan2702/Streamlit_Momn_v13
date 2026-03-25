@@ -1060,11 +1060,15 @@ elif st.session_state.current_step == 3:
             cmp_map3 = dict(zip(dfStats['Ticker'], dfStats['Close']))
 
         # Top-N screener tickers — Worst Rank Held column ke liye
-        # Explicit sort_values('Rank') kyunki Rank index hai, head() bina sort ke wrong rows de sakta hai
+        # Sirf wahi stocks jo filter pass kiye AND rank <= top_n_rank
+        # (Excel "Filtered Stocks" sheet ke same 48 stocks)
         _df_sorted = dfFiltered.reset_index()
         if 'Rank' in _df_sorted.columns:
             _df_sorted = _df_sorted.sort_values('Rank', ascending=True)
-        top_n_tickers = _df_sorted["Ticker"].head(st.session_state.top_n_rank).tolist()
+            _top_filtered = _df_sorted[_df_sorted['Rank'] <= st.session_state.top_n_rank]
+        else:
+            _top_filtered = _df_sorted.head(st.session_state.top_n_rank)
+        top_n_tickers = _top_filtered["Ticker"].tolist()
         worst_rank_text = "\n".join(top_n_tickers) if top_n_tickers else "(no data)"
 
         st.markdown("""
@@ -1340,42 +1344,21 @@ elif st.session_state.current_step == 4:
         st.dataframe(reb_table, use_container_width=True)
 
     # ── Next Steps Reminder ───────────────────────────────────
-    st.markdown('<div class="section-hdr">📌 Next Steps — Rebalance Ke Baad</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;
-                padding:18px 22px;font-size:13px;line-height:2.2;">
+    st.markdown("### 📌 Next Steps — Rebalance Ke Baad")
+    st.markdown("**🏁 Trades execute hone ke baad yeh karo:**")
 
-      <div style="margin-bottom:8px;font-weight:700;color:#0f172a;font-size:14px;">
-        🏁 Trades Execute Hone Ke Baad:
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:6px;">
-
-        <div style="background:#dcfce7;border-radius:8px;padding:8px 14px;">
-          <b>1.</b> 📊 <b>Rebalance Sheet</b> open karo →
-          Portfolio sheet mein new holdings manually update karo
-          (sell wale hato, buy wale add karo)
+    col_ns1, col_ns2 = st.columns(2)
+    with col_ns1:
+        st.success("**1. 📊 Rebalance Sheet update karo**\n\nPortfolio sheet mein sell wale stocks hato, buy wale add karo.")
+        st.info("**3. 📈 XIRR / Dashboard refresh karo**\n\nPortfolio value update hone ke baad XIRR recalculate hogi.")
+    with col_ns2:
+        st.warning("**2. 💾 Monthly Backup lo**\n\nGoogle Sheet → File → Make a copy → rename: `Portfolio_Backup_MMYYYY`")
+        st.markdown("""
+        <div style="background:#f3e8ff;border:1px solid #d8b4fe;border-radius:8px;padding:12px 16px;font-size:13px;">
+        🗓️ <b>Next Rebalance Date note karo</b><br>
+        March-end ya September-end (jo bhi agle aaye)
         </div>
-
-        <div style="background:#dbeafe;border-radius:8px;padding:8px 14px;">
-          <b>2.</b> 💾 <b>Monthly Backup</b> — Google Sheet ka ek copy
-          banao (File → Make a copy) → rename karo
-          <code>Portfolio_Backup_MMYYYY</code>
-        </div>
-
-        <div style="background:#fef9c3;border-radius:8px;padding:8px 14px;">
-          <b>3.</b> 📈 <b>XIRR / Dashboard refresh</b> karo —
-          Portfolio value update hone ke baad XIRR recalculate hogi
-        </div>
-
-        <div style="background:#f3e8ff;border-radius:8px;padding:8px 14px;">
-          <b>4.</b> 🗓️ <b>Next Rebalance Date</b> note karo —
-          March-end ya September-end (jo bhi agle aaye)
-        </div>
-
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     st.divider()
     col_r1, col_r2 = st.columns(2)
