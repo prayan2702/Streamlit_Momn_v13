@@ -580,8 +580,7 @@ with st.sidebar:
     st.markdown(f"""
     <div style="font-size:12px;line-height:2.2;">
     <a href="https://www.nseindia.com/static/market-data/securities-available-for-trading" target="_blank">📥 DOWNLOAD NSE EQUITY_L.csv</a><br>
-    <a href="{APPS_SCRIPT_URL}" target="_blank">⚖️ REBALANCER</a><br>
-    <a href="https://docs.google.com/spreadsheets/d/1xb8xoW91HWeXBW8Zd99TobULSgwxcvfPaaYPlMLZmHI" target="_blank">📊 REBALANCE SHEET</a>
+    <a href="{APPS_SCRIPT_URL}" target="_blank">⚖️ REBALANCER</a>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1312,7 +1311,7 @@ elif st.session_state.current_step == 4:
     # ── Apps Script / Rebalance Sheet links ───────────────────
     st.markdown('<div class="section-hdr">📊 Apps Script Workflow — Quick Links</div>', unsafe_allow_html=True)
 
-    col_links = st.columns(3)
+    col_links = st.columns(2)
     with col_links[0]:
         st.markdown(f"""
         <a href="{APPS_SCRIPT_URL}" target="_blank">
@@ -1322,14 +1321,6 @@ elif st.session_state.current_step == 4:
         </div></a>
         """, unsafe_allow_html=True)
     with col_links[1]:
-        st.markdown("""
-        <a href="https://docs.google.com/spreadsheets/d/1xb8xoW91HWeXBW8Zd99TobULSgwxcvfPaaYPlMLZmHI" target="_blank">
-        <div style="background:#2e7d32;color:white;padding:10px 16px;border-radius:8px;
-                    text-align:center;font-weight:700;font-size:13px;">
-        📊 Rebalance Sheet
-        </div></a>
-        """, unsafe_allow_html=True)
-    with col_links[2]:
         st.markdown("""
         <a href="https://prayan2702.github.io/momn-dashboard/" target="_blank">
         <div style="background:#7c3aed;color:white;padding:10px 16px;border-radius:8px;
