@@ -1051,7 +1051,7 @@ elif st.session_state.current_step == 3:
         # ══════════════════════════════════════════════════════════
         st.markdown('<div class="section-hdr">🔄 Rebalancer Workflow</div>', unsafe_allow_html=True)
 
-        # ── Step A: Copy Worst Rank / Sell list for Sheet ─────────
+        # ── Step A: Copy Top-N screener list → Google Sheet "Worst Rank Held"
         sell_list_local = exit_stocks.dropna().tolist()
         buy_list_local  = entry_stocks.dropna().tolist()
 
@@ -1059,34 +1059,41 @@ elif st.session_state.current_step == 3:
         if dfStats is not None:
             cmp_map3 = dict(zip(dfStats['Ticker'], dfStats['Close']))
 
-        # Sell stocks as newline text for easy paste
-        sell_text = "\n".join(sell_list_local) if sell_list_local else "(koi sell nahi)"
+        # Top-N screener tickers — Worst Rank Held column ke liye
+        # Explicit sort_values('Rank') kyunki Rank index hai, head() bina sort ke wrong rows de sakta hai
+        _df_sorted = dfFiltered.reset_index()
+        if 'Rank' in _df_sorted.columns:
+            _df_sorted = _df_sorted.sort_values('Rank', ascending=True)
+        top_n_tickers = _df_sorted["Ticker"].head(st.session_state.top_n_rank).tolist()
+        worst_rank_text = "\n".join(top_n_tickers) if top_n_tickers else "(no data)"
 
         st.markdown("""
         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;
                     padding:14px 18px;margin:8px 0;font-size:13px;line-height:2;">
         <b>📋 Workflow Steps:</b><br>
-        <b>1.</b> Neeche Worst Rank List copy karo → Google Sheet ke <b>"Worst Rank Held"</b> column mein paste karo<br>
-        <b>2.</b> <b>"Open Portfolio Rebalancer"</b> button se rebalancer open karo<br>
-        <b>3.</b> Rebalancer mein sell stocks select karo → actual sell value note karo<br>
-        <b>4.</b> Woh sell value neeche <b>"Sell Value"</b> field mein enter karo → Buy orders auto-calculate honge
+        <b>1.</b> Neeche <b>Top-N Screener list</b> copy karo → Google Sheet ke <b>"Worst Rank Held"</b> column mein paste karo
+          <span style="color:#64748b;font-size:12px;">(ye list rebalancer ko batati hai ki kaun good rank mein hai)</span><br>
+        <b>2.</b> <b>"Open Portfolio Rebalancer"</b> button dabao → Sell stocks select karo → actual sell value note karo<br>
+        <b>3.</b> Woh sell value neeche <b>"Sell Value"</b> field mein enter karo → Buy orders auto-calculate honge
         </div>
         """, unsafe_allow_html=True)
 
         wa1, wa2 = st.columns([1, 1])
         with wa1:
-            st.markdown("**📋 Worst Rank List (Worst Rank Held ke liye copy karo):**")
+            n_top = len(top_n_tickers)
+            st.markdown(f"**📋 Top-{st.session_state.top_n_rank} Screener List — Google Sheet 'Worst Rank Held' column mein paste karo:**")
+            st.caption(f"✅ {n_top} filtered & ranked stocks | Rank 1 se Rank {n_top} tak")
             st.text_area(
-                "Worst Rank List — Google Sheet Worst Rank Held column mein paste karo",
-                value=sell_text,
-                height=min(120, max(60, len(sell_list_local) * 22)),
+                "Top-N list — Google Sheet Worst Rank Held column mein paste karo",
+                value=worst_rank_text,
+                height=min(160, max(80, len(top_n_tickers) * 6 + 60)),
                 key="sell_copy_area",
                 label_visibility="collapsed",
-                help="Yeh text copy karo aur Google Sheet ke Worst Rank Held column mein paste karo"
+                help="Yeh Top-N screener stocks Google Sheet ke Worst Rank Held column mein paste karo"
             )
             # Clipboard copy — uses execCommand fallback for Streamlit iframe sandbox
             import streamlit.components.v1 as _components
-            _safe_text = sell_text.replace("`", "'").replace("\\", "/")
+            _safe_text = worst_rank_text.replace("`", "'").replace("\\", "/")
             _copy_html = f"""
             <textarea id="cpytxt" style="position:absolute;left:-9999px;">{_safe_text}</textarea>
             <button id="cpybtn"
@@ -1299,7 +1306,7 @@ elif st.session_state.current_step == 4:
         st.caption("Sheets: Unfiltered Stocks | Filtered Stocks | Failed Downloads | Portfolio Rebalancing")
 
     # ── Apps Script / Rebalance Sheet links ───────────────────
-    st.markdown('<div class="section-hdr">📊 Google Sheets — Apps Script Workflow</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-hdr">📊 Apps Script Workflow — Quick Links</div>', unsafe_allow_html=True)
 
     col_links = st.columns(3)
     with col_links[0]:
@@ -1315,7 +1322,7 @@ elif st.session_state.current_step == 4:
         <a href="https://docs.google.com/spreadsheets/d/1xb8xoW91HWeXBW8Zd99TobULSgwxcvfPaaYPlMLZmHI" target="_blank">
         <div style="background:#2e7d32;color:white;padding:10px 16px;border-radius:8px;
                     text-align:center;font-weight:700;font-size:13px;">
-        📊 Google Sheet
+        📊 Rebalance Sheet
         </div></a>
         """, unsafe_allow_html=True)
     with col_links[2]:
@@ -1332,23 +1339,43 @@ elif st.session_state.current_step == 4:
         st.markdown('<div class="section-hdr">📋 Portfolio Rebalancing</div>', unsafe_allow_html=True)
         st.dataframe(reb_table, use_container_width=True)
 
-    # ── Monthly checklist ─────────────────────────────────────
-    st.markdown('<div class="section-hdr">✅ Monthly Rebalance Checklist</div>', unsafe_allow_html=True)
-    checklist = [
-        ("1", "📥 NSE se EQUITY_L.csv download kiya",           "Step 1"),
-        ("2", "▶ Screener run kiya (YFinance/Upstox/AngelOne)", "Step 2"),
-        ("3", "📋 Top-N list se sell/buy nikala",               "Step 3"),
-        ("4", "📊 Google Sheet update kiya (manually)",         "Manual"),
-        ("5", "🤝 Broker se trades execute kiye",               "Manual"),
-        ("6", "⚖️ Portfolio Rebalancer (Apps Script) run kiya", "Apps Script"),
-        ("7", "💾 Sheet backup kiya (monthly)",                 "Manual"),
-        ("8", "📈 Dashboard refresh / XIRR check kiya",         "Dashboard"),
-    ]
-    for num, task, where in checklist:
-        c1, c2, c3 = st.columns([0.3, 3, 1])
-        with c1: st.checkbox("", key=f"chk_{num}")
-        with c2: st.markdown(f"<div style='padding-top:4px;font-size:13px;'>{task}</div>", unsafe_allow_html=True)
-        with c3: st.markdown(f"<div style='padding-top:4px;font-size:11px;color:#64748b;'>{where}</div>", unsafe_allow_html=True)
+    # ── Next Steps Reminder ───────────────────────────────────
+    st.markdown('<div class="section-hdr">📌 Next Steps — Rebalance Ke Baad</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;
+                padding:18px 22px;font-size:13px;line-height:2.2;">
+
+      <div style="margin-bottom:8px;font-weight:700;color:#0f172a;font-size:14px;">
+        🏁 Trades Execute Hone Ke Baad:
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;">
+
+        <div style="background:#dcfce7;border-radius:8px;padding:8px 14px;">
+          <b>1.</b> 📊 <b>Rebalance Sheet</b> open karo →
+          Portfolio sheet mein new holdings manually update karo
+          (sell wale hato, buy wale add karo)
+        </div>
+
+        <div style="background:#dbeafe;border-radius:8px;padding:8px 14px;">
+          <b>2.</b> 💾 <b>Monthly Backup</b> — Google Sheet ka ek copy
+          banao (File → Make a copy) → rename karo
+          <code>Portfolio_Backup_MMYYYY</code>
+        </div>
+
+        <div style="background:#fef9c3;border-radius:8px;padding:8px 14px;">
+          <b>3.</b> 📈 <b>XIRR / Dashboard refresh</b> karo —
+          Portfolio value update hone ke baad XIRR recalculate hogi
+        </div>
+
+        <div style="background:#f3e8ff;border-radius:8px;padding:8px 14px;">
+          <b>4.</b> 🗓️ <b>Next Rebalance Date</b> note karo —
+          March-end ya September-end (jo bhi agle aaye)
+        </div>
+
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.divider()
     col_r1, col_r2 = st.columns(2)
