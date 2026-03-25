@@ -478,9 +478,9 @@ def format_simple_sheet(file_name, sheet_name):
 # LOGIN
 # ═══════════════════════════════════════════════════════════════
 def login_page():
-    st.title("Login")
-    col, _ = st.columns([1, 1])
-    with col:
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        st.title("Login")
         with st.form(key="login_form", clear_on_submit=True):
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
