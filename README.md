@@ -24,11 +24,6 @@ pip install -r requirements.txt
 streamlit run momn_streamlit_app_v12.py
 ```
 
-**Login credentials:**
-- Username: `prayan`
-- Password: `prayan`
-
----
 
 ## requirements.txt
 
@@ -49,53 +44,6 @@ pyotp>=2.8.0
 
 ---
 
-## Data Source Authentication Setup
-
-### YFinance (Default)
-Koi setup nahi — seedha kaam karta hai.
-
-### Upstox
-`.streamlit/secrets.toml` mein add karo:
-```toml
-[upstox]
-api_key      = "YOUR_API_KEY"
-api_secret   = "YOUR_API_SECRET"
-redirect_uri = "https://your-app.streamlit.app/"
-```
-- Pehli baar: sidebar mein OAuth URL aayega → browser mein login karo → `?code=XXX` wala code copy karke paste karo → token generate hoga
-- Token 23 hours valid rehta hai (roz fresh login)
-
-### Angel One
-`.streamlit/secrets.toml` mein add karo:
-```toml
-[angelone]
-api_key     = "YOUR_API_KEY"
-client_code = "YOUR_CLIENT_ID"
-password    = "YOUR_MPIN"
-totp_secret = "YOUR_TOTP_BASE32_SECRET"
-```
-- TOTP Secret: Angel One SmartAPI developer console → Apps → apni app → TOTP Secret
-- Auto-login hota hai — koi manual step nahi
-
-> **Note:** Agar `smartapi-python` install nahi hai to Angel One / Upstox select karne par bhi **YFinance fallback** automatically use hoga — app crash nahi hogi.
-
----
-
-## Streamlit Cloud / Hugging Face Deploy
-
-1. GitHub repo mein yeh files push karo:
-   - `momn_streamlit_app_v12.py` → rename to `app.py` (HF Spaces ke liye)
-   - `calculations.py`
-   - `data_service.py`
-   - `upstox_auth.py`
-   - `angelone_auth.py`
-   - `requirements.txt`
-
-2. Streamlit Cloud → Secrets mein `[upstox]` / `[angelone]` section add karo
-
-3. Main file: `momn_streamlit_app_v12.py`
-
----
 
 ## 4-Step Workflow
 
@@ -205,10 +153,6 @@ totp_secret = "YOUR_TOTP_BASE32_SECRET"
 - Filtered: AWAY_ATH% suffix, Rank green highlight, Summary row at bottom
 - Rebalancing: Red = Sell column, Green = Buy column
 - Failed: Orange highlight
-
-**Quick Links:**
-- ⚖️ [Portfolio Rebalancer](https://script.google.com/macros/s/AKfycbxIUgGxTf-zNJEq-bCMDMXYYCpZd9FeW4-06ovt1skKXmVjVcnIMv_GCmQ85DMH6xev/exec)
-- 📊 [Google Sheet](https://docs.google.com/spreadsheets/d/1xb8xoW91HWeXBW8Zd99TobULSgwxcvfPaaYPlMLZmHI)
 
 **Monthly Checklist (in-app):**
 1. NSE se EQUITY_L.csv download kiya
