@@ -1066,7 +1066,7 @@ elif st.session_state.current_step == 3:
         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;
                     padding:14px 18px;margin:8px 0;font-size:13px;line-height:2;">
         <b>📋 Workflow Steps:</b><br>
-        <b>1.</b> Neeche sell stocks copy karo → Google Sheet ke <b>"Worst Rank Held"</b> column mein paste karo<br>
+        <b>1.</b> Neeche Worst Rank List copy karo → Google Sheet ke <b>"Worst Rank Held"</b> column mein paste karo<br>
         <b>2.</b> <b>"Open Portfolio Rebalancer"</b> button se rebalancer open karo<br>
         <b>3.</b> Rebalancer mein sell stocks select karo → actual sell value note karo<br>
         <b>4.</b> Woh sell value neeche <b>"Sell Value"</b> field mein enter karo → Buy orders auto-calculate honge
