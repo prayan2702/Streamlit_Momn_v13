@@ -478,16 +478,35 @@ def format_simple_sheet(file_name, sheet_name):
 # LOGIN
 # ═══════════════════════════════════════════════════════════════
 def login_page():
-    st.title("🔐 Login")
-    with st.form("login_form", clear_on_submit=True):
-        u = st.text_input("Username")
-        p = st.text_input("Password", type="password")
-        if st.form_submit_button("Login"):
-            if u == USERNAME and p == PASSWORD:
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("Invalid username or password")
+    # Compact centered card — same visual size as v10
+    st.markdown("""
+    <style>
+    /* Hide default streamlit padding on login page */
+    .login-wrap { display:flex; justify-content:center; margin-top:80px; }
+    .login-card {
+        background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+        padding:36px 40px; width:360px; box-shadow:0 4px 16px rgba(0,0,0,0.08);
+    }
+    .login-title { font-size:22px; font-weight:700; color:#0f172a;
+                   margin-bottom:24px; text-align:center; }
+    </style>
+    <div class="login-wrap"><div class="login-card">
+      <div class="login-title">🔐 Login</div>
+    </div></div>
+    """, unsafe_allow_html=True)
+
+    # Center the form using columns (mimics v10 narrow layout)
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid:
+        with st.form("login_form", clear_on_submit=True):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("Login", use_container_width=True):
+                if u == USERNAME and p == PASSWORD:
+                    st.session_state.logged_in = True
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
 
 if not st.session_state.logged_in:
     login_page()
@@ -560,9 +579,9 @@ with st.sidebar:
     st.markdown("### 🔗 Quick Links")
     st.markdown(f"""
     <div style="font-size:12px;line-height:2.2;">
-    <a href="https://www.nseindia.com/static/market-data/securities-available-for-trading" target="_blank">📥 NSE EQUITY_L.csv</a><br>
-    <a href="{APPS_SCRIPT_URL}" target="_blank">⚖️ Rebalance Sheet</a><br>
-    <a href="https://docs.google.com/spreadsheets/d/1xb8xoW91HWeXBW8Zd99TobULSgwxcvfPaaYPlMLZmHI" target="_blank">📊 Google Sheet</a>
+    <a href="https://www.nseindia.com/static/market-data/securities-available-for-trading" target="_blank">📥 DOWNLOAD NSE EQUITY_L.csv</a><br>
+    <a href="{APPS_SCRIPT_URL}" target="_blank">⚖️ REBALANCER</a><br>
+    <a href="https://docs.google.com/spreadsheets/d/1xb8xoW91HWeXBW8Zd99TobULSgwxcvfPaaYPlMLZmHI" target="_blank">📊 REBALANCE SHEET</a>
     </div>
     """, unsafe_allow_html=True)
 
@@ -970,12 +989,28 @@ elif st.session_state.current_step == 3:
                 cmp_map = {}
                 if dfStats is not None:
                     cmp_map = dict(zip(dfStats['Ticker'], dfStats['Close']))
+                # Also try dfFiltered for CMP (in case stock is in filtered but not dfStats)
+                if dfFiltered is not None:
+                    for t, c in zip(dfFiltered.reset_index()['Ticker'], dfFiltered.reset_index()['Close']):
+                        if t not in cmp_map:
+                            cmp_map[t] = c
                 sell_df = pd.DataFrame({
                     "Stock": sell_list,
-                    "CMP ₹": [round(cmp_map.get(s, 0), 2) for s in sell_list],
+                    "CMP ₹": [
+                        round(cmp_map[s], 2) if s in cmp_map and cmp_map[s] > 0
+                        else "N/A *"
+                        for s in sell_list
+                    ],
                     "Reason": reasons_for_exit[:len(sell_list)]
                 })
                 st.dataframe(sell_df, hide_index=True, use_container_width=True)
+                missing_cmp = [s for s in sell_list if s not in cmp_map or cmp_map.get(s, 0) == 0]
+                if missing_cmp:
+                    st.caption(
+                        f"* {', '.join(missing_cmp)} — CMP unavailable "
+                        f"(stock selected universe ({st.session_state.universe}) mein nahi hai). "
+                        "Broker app se manually CMP check karo."
+                    )
             else:
                 st.success("Koi sell nahi hai!")
 
@@ -1049,15 +1084,36 @@ elif st.session_state.current_step == 3:
                 label_visibility="collapsed",
                 help="Yeh text copy karo aur Google Sheet ke Worst Rank Held column mein paste karo"
             )
-            # JS clipboard copy button
-            sell_js_text = sell_text.replace("\n", "\\n").replace("'", "\\'")
-            st.markdown(f"""
-            <button onclick="navigator.clipboard.writeText('{sell_js_text}').then(()=>this.textContent='✅ Copied!').catch(()=>alert('Manual copy karo'))"
-                style="background:#2563eb;color:white;border:none;padding:7px 18px;
-                       border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;">
-                📋 Copy to Clipboard
+            # Clipboard copy — uses execCommand fallback for Streamlit iframe sandbox
+            import streamlit.components.v1 as _components
+            _safe_text = sell_text.replace("`", "'").replace("\\", "/")
+            _copy_html = f"""
+            <textarea id="cpytxt" style="position:absolute;left:-9999px;">{_safe_text}</textarea>
+            <button id="cpybtn"
+              onclick="
+                var t=document.getElementById('cpytxt');
+                t.select(); t.setSelectionRange(0,99999);
+                var ok=false;
+                try{{ok=document.execCommand('copy');}}catch(e){{}}
+                if(!ok && navigator.clipboard){{
+                  navigator.clipboard.writeText(t.value).then(function(){{
+                    document.getElementById('cpybtn').innerHTML='✅ Copied!';
+                    document.getElementById('cpybtn').style.background='#16a34a';
+                  }});
+                }} else if(ok) {{
+                  document.getElementById('cpybtn').innerHTML='✅ Copied!';
+                  document.getElementById('cpybtn').style.background='#16a34a';
+                }} else {{
+                  alert('Manually select text above aur Ctrl+C / Cmd+C dabao');
+                }}
+              "
+              style="background:#2563eb;color:white;border:none;padding:8px 20px;
+                     border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;
+                     margin-top:4px;">
+              📋 Copy to Clipboard
             </button>
-            """, unsafe_allow_html=True)
+            """
+            _components.html(_copy_html, height=50)
 
         with wa2:
             st.markdown("**⚖️ Portfolio Rebalancer:**")
