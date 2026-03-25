@@ -479,15 +479,17 @@ def format_simple_sheet(file_name, sheet_name):
 # ═══════════════════════════════════════════════════════════════
 def login_page():
     st.title("Login")
-    with st.form(key="login_form", clear_on_submit=True):
-        u = st.text_input("Username")
-        p = st.text_input("Password", type="password")
-        if st.form_submit_button(label="Login"):
-            if u == USERNAME and p == PASSWORD:
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("Invalid username or password")
+    col, _ = st.columns([1, 1])
+    with col:
+        with st.form(key="login_form", clear_on_submit=True):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button(label="Login"):
+                if u == USERNAME and p == PASSWORD:
+                    st.session_state.logged_in = True
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
 
 if not st.session_state.logged_in:
     login_page()
