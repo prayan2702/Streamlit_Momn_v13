@@ -1343,22 +1343,7 @@ elif st.session_state.current_step == 4:
         st.markdown('<div class="section-hdr">📋 Portfolio Rebalancing</div>', unsafe_allow_html=True)
         st.dataframe(reb_table, use_container_width=True)
 
-    # ── Next Steps Reminder ───────────────────────────────────
-    st.markdown("### 📌 Next Steps — Rebalance Ke Baad")
-    st.markdown("**🏁 Trades execute hone ke baad yeh karo:**")
 
-    col_ns1, col_ns2 = st.columns(2)
-    with col_ns1:
-        st.success("**1. 📊 Rebalance Sheet update karo**\n\nPortfolio sheet mein sell wale stocks hato, buy wale add karo.")
-        st.info("**3. 📈 XIRR / Dashboard refresh karo**\n\nPortfolio value update hone ke baad XIRR recalculate hogi.")
-    with col_ns2:
-        st.warning("**2. 💾 Monthly Backup lo**\n\nGoogle Sheet → File → Make a copy → rename: `Portfolio_Backup_MMYYYY`")
-        st.markdown("""
-        <div style="background:#f3e8ff;border:1px solid #d8b4fe;border-radius:8px;padding:12px 16px;font-size:13px;">
-        🗓️ <b>Next Rebalance Date note karo</b><br>
-        March-end ya September-end (jo bhi agle aaye)
-        </div>
-        """, unsafe_allow_html=True)
 
     st.divider()
     col_r1, col_r2 = st.columns(2)
