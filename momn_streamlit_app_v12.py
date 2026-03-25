@@ -478,35 +478,16 @@ def format_simple_sheet(file_name, sheet_name):
 # LOGIN
 # ═══════════════════════════════════════════════════════════════
 def login_page():
-    # Compact centered card — same visual size as v10
-    st.markdown("""
-    <style>
-    /* Hide default streamlit padding on login page */
-    .login-wrap { display:flex; justify-content:center; margin-top:80px; }
-    .login-card {
-        background:#fff; border:1px solid #e2e8f0; border-radius:12px;
-        padding:36px 40px; width:360px; box-shadow:0 4px 16px rgba(0,0,0,0.08);
-    }
-    .login-title { font-size:22px; font-weight:700; color:#0f172a;
-                   margin-bottom:24px; text-align:center; }
-    </style>
-    <div class="login-wrap"><div class="login-card">
-      <div class="login-title">🔐 Login</div>
-    </div></div>
-    """, unsafe_allow_html=True)
-
-    # Center the form using columns (mimics v10 narrow layout)
-    _, mid, _ = st.columns([1, 1.2, 1])
-    with mid:
-        with st.form("login_form", clear_on_submit=True):
-            u = st.text_input("Username")
-            p = st.text_input("Password", type="password")
-            if st.form_submit_button("Login", use_container_width=True):
-                if u == USERNAME and p == PASSWORD:
-                    st.session_state.logged_in = True
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password")
+    st.title("Login")
+    with st.form(key="login_form", clear_on_submit=True):
+        u = st.text_input("Username")
+        p = st.text_input("Password", type="password")
+        if st.form_submit_button(label="Login"):
+            if u == USERNAME and p == PASSWORD:
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
 
 if not st.session_state.logged_in:
     login_page()
