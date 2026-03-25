@@ -13,4 +13,4 @@ pyotp>=2.8.0
 # ── Angel One auth ───────────────────
 # smartapi-python needs to be installed for Angel One support.
 # Uncomment the line below when deploying with Angel One:
-# smartapi-python>=1.3.4
+smartapi-python>=1.3.4
