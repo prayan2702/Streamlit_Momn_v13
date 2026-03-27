@@ -213,7 +213,7 @@ PORTFOLIO_CSV_URL = (
 )
 APPS_SCRIPT_URL = (
     "https://script.google.com/macros/s/"
-    "AKfycbxIUgGxTf-zNJEq-bCMDMXYYCpZd9FeW4-06ovt1skKXmVjVcnIMv_GCmQ85DMH6xev/exec"
+    "AKfycbwUNaPd82fIyQXBrPguLBZBv4tLA94Y_Uw4g-8_W77qRvmpQgJvK6_huvWcjVy0XRkc/exec"
 )
 GITHUB_BASE = "https://raw.githubusercontent.com/prayan2702/Streamlit-momn/refs/heads/main"
 
