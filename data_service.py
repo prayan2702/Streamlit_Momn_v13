@@ -4,20 +4,21 @@ data_service.py
 Multi-API data-fetching service for Momentum Screener.
 Supports: YFinance (live) | Upstox (LIVE) | Angel One (LIVE) | Zerodha (placeholder)
 
-UPSTOX SPEED OPTIMIZATION (v3):
-  - Sequential loop → ThreadPoolExecutor (40 parallel workers)
-  - Token Bucket Rate Limiter @ 40 req/sec (Upstox hard limit: 50/sec)
-  - 20% safety buffer below rate limit to avoid 429s
-  - 429 hit hone pe: exponential backoff in per-symbol fetcher
-  - Expected speedup: 6-8x faster for large universes
-    Nifty500 : ~100s → ~15s
-    AllNSE   : ~400s → ~55s
+UPSTOX SPEED OPTIMIZATION (v4 — MultiWindowRateLimiter):
+  - Sequential loop → 20 parallel ThreadPoolExecutor workers
+  - _MultiWindowRateLimiter respects ALL 3 Upstox limits simultaneously:
+      Window A:    1 sec  →  45 req  (hard limit: 50)
+      Window B:   60 sec  → 450 req  (hard limit: 500)
+      Window C: 1800 sec  →1800 req  (hard limit: 2000)
+  - Auto-adapts speed to universe size — no manual tuning needed:
+      Nifty50   : bursts at ~45/sec → done in ~2 sec
+      Nifty500  : ~7-8/sec sustained → ~65 sec
+      AllNSE    : ~7/sec first 450 symbols, auto-slows to ~1/sec after
+  - Live rate display: req/sec · req/min · req/30min in status bar
+  - ETA estimate shown before start + updated every 10 fetches
 
 ANGEL ONE SPEED OPTIMIZATION (v2):
-  - ThreadPoolExecutor se parallel requests (2 workers)
-  - Token Bucket Rate Limiter (1.5 req/sec strictly enforce)
-  - Fixed sleep hataya — ab network latency parallel mein hide hoti hai
-  - Expected speedup: 3-4x faster for large symbol lists
+  - 2 workers + TokenBucket(1.5/sec) — safely under 3/sec Angel One limit
 """
 
 import time
@@ -184,24 +185,21 @@ def fetch_yfinance(symbols, start_date, chunk_size, progress_bar, status_text):
 
 
 # ─────────────────────────────────────────────────────────────
-# SECTION D — TOKEN BUCKET RATE LIMITER (Thread-Safe)
-# Upstox aur Angel One dono use karte hain.
+# SECTION D — RATE LIMITERS (Thread-Safe)
 # ─────────────────────────────────────────────────────────────
+
 class _TokenBucket:
     """
-    Thread-safe token bucket rate limiter.
-    Upstox  : _TokenBucket(max_rate=40.0)  — 40 req/sec
-    AngelOne: _TokenBucket(max_rate=1.5)   — 1.5 req/sec
-    Threads yahan block karte hain jab tak token available nahi hota.
+    Simple token-bucket rate limiter.
+    Angel One: _TokenBucket(max_rate=1.5)
     """
     def __init__(self, max_rate: float = 3.0):
         self._rate      = max_rate
-        self._tokens    = max_rate          # bucket full se start
+        self._tokens    = max_rate
         self._last_time = time.monotonic()
         self._lock      = threading.Lock()
 
     def acquire(self):
-        """Block until a token is available, then consume one."""
         while True:
             with self._lock:
                 now     = time.monotonic()
@@ -211,42 +209,118 @@ class _TokenBucket:
                 if self._tokens >= 1.0:
                     self._tokens -= 1.0
                     return
-            time.sleep(0.01)   # Upstox ke liye 10ms granularity (40/sec pe 25ms interval)
+            time.sleep(0.05)
+
+
+class _MultiWindowRateLimiter:
+    """
+    Thread-safe multi-window rate limiter for Upstox.
+
+    Upstox imposes THREE simultaneous limits on historical candle API:
+        Window A :   1 second  →   50 requests  (hard burst cap)
+        Window B :  60 seconds →  500 requests  (per-minute cap)
+        Window C : 1800 seconds→ 2000 requests  (per-30-min cap)
+
+    We apply 10% safety buffers:
+        Window A :  45 req /  1 sec
+        Window B : 450 req / 60 sec
+        Window C :1800 req / 1800 sec
+
+    Logic: maintain a deque of timestamps of past requests.
+    Before each new request, count how many timestamps fall inside
+    each window. If ANY window is full → block (sleep 50ms, retry).
+
+    This means:
+      - Small universes (Nifty50/100): bursts at ~45/sec ✅
+      - Medium (Nifty500): ~7-8/sec sustained ✅
+      - Large (AllNSE 2100+): auto-slows to ~1 req/sec after
+        first 1800 requests, respecting 30-min cap ✅
+    """
+
+    # (window_seconds, max_requests_with_buffer)
+    WINDOWS = [
+        (1,    45),    # 50/sec  → 45 safe
+        (60,   450),   # 500/min → 450 safe
+        (1800, 1800),  # 2000/30min → 1800 safe
+    ]
+
+    def __init__(self):
+        from collections import deque
+        self._timestamps = deque()   # monotonic times of completed acquires
+        self._lock       = threading.Lock()
+
+    def acquire(self):
+        """Block until ALL three windows have capacity, then record request."""
+        from collections import deque
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                # Prune timestamps older than the largest window (1800s)
+                cutoff = now - self.WINDOWS[-1][0]
+                while self._timestamps and self._timestamps[0] < cutoff:
+                    self._timestamps.popleft()
+
+                # Check every window
+                can_proceed = True
+                for window_sec, max_req in self.WINDOWS:
+                    window_cutoff = now - window_sec
+                    count = sum(1 for t in self._timestamps if t >= window_cutoff)
+                    if count >= max_req:
+                        can_proceed = False
+                        break
+
+                if can_proceed:
+                    self._timestamps.append(now)
+                    return
+
+            time.sleep(0.05)   # 50ms poll interval
+
+    def current_rates(self):
+        """Returns (req/sec, req/min, req/30min) for status display."""
+        from collections import deque
+        now = time.monotonic()
+        with self._lock:
+            r1  = sum(1 for t in self._timestamps if t >= now - 1)
+            r60 = sum(1 for t in self._timestamps if t >= now - 60)
+            r30m= len(self._timestamps)
+        return r1, r60, r30m
 
 
 # ─────────────────────────────────────────────────────────────
-# SECTION H — UPSTOX BULK FETCHER (LIVE) — OPTIMIZED v3
+# SECTION H — UPSTOX BULK FETCHER (LIVE) — OPTIMIZED v4
 # ─────────────────────────────────────────────────────────────
 UPSTOX_MAX_LOOKBACK_MONTHS = 120
 
-# Upstox rate limits (Other Standard APIs — historical candles):
-#   50 req/sec  |  500 req/min  |  2000 req/30min
-# We use 40/sec (20% safety buffer) to stay safely under 50/sec.
-# Per-minute: 40*60 = 2400 > 500 — per-minute limit more restrictive!
-# So effective safe rate = min(40/sec, 500/min) = 8.3/sec sustained.
-# But bursting to 40 within first second is fine since bucket starts full.
-# We use 40 workers + 40/sec token bucket for max burst speed,
-# then naturally throttles to ~8/sec for sustained large downloads.
-
-_UPSTOX_MAX_WORKERS = 40
-_UPSTOX_RATE        = 40.0   # tokens/sec — stays under 50/sec hard limit
+# Workers: 20 concurrent threads.
+# Rate is controlled purely by _MultiWindowRateLimiter — workers just
+# block at acquire() until a slot is available in all three windows.
+# 20 workers >> max throughput (45/sec) so the limiter is always
+# the bottleneck, never worker starvation.
+_UPSTOX_MAX_WORKERS = 20
 
 
 def _upstox_worker(sym: str, instrument_key: str, access_token: str,
                    start_date: datetime, end_date: datetime,
-                   rate_limiter) -> tuple:
-    """Worker: acquire rate-limit token, then fetch one symbol. Thread-safe."""
+                   rate_limiter: _MultiWindowRateLimiter) -> tuple:
+    """Worker: block on rate limiter, then fetch. Fully thread-safe."""
     rate_limiter.acquire()
-    df = _fetch_upstox_history_live(instrument_key, access_token, start_date, end_date)
+    df = _fetch_upstox_history_live(instrument_key, access_token,
+                                    start_date, end_date)
     return sym, df
 
 
 def fetch_upstox(symbols, start_date, end_date, chunk_size,
                  progress_bar, status_text):
     """
-    Upstox bulk fetcher — parallel v3.
-    40 concurrent threads + TokenBucket(40/sec) — safely under 50/sec limit.
-    Speedup vs sequential: ~6-8x for large universes.
+    Upstox bulk fetcher — parallel v4 with MultiWindowRateLimiter.
+
+    Respects ALL three Upstox API limits simultaneously:
+      50/sec | 500/min | 2000/30min  (10% buffers applied)
+
+    Speed auto-adapts to universe size:
+      Nifty50   →  ~45/sec burst   → ~2 sec total
+      Nifty500  →  ~7-8/sec        → ~65 sec total
+      AllNSE    →  ~7-8/sec first 450, then ~1/sec → ~35 min total
     """
     # ── Auth & token validation ──────────────────────────────
     access_token = get_upstox_access_token(sidebar=True)
@@ -262,7 +336,7 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size,
         st.stop()
     st.sidebar.success("Token validated OK")
 
-    # ── Date cap: Upstox max 120 months ──────────────────────
+    # ── Date cap ─────────────────────────────────────────────
     upstox_start = end_date - relativedelta(months=UPSTOX_MAX_LOOKBACK_MONTHS)
     if start_date < upstox_start:
         start_date = upstox_start
@@ -274,11 +348,10 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size,
         st.error("Could not load Upstox instrument master.")
         st.stop()
 
-    # ── Build task list: resolve symbol → instrument_key ─────
-    tasks     = []   # list of (sym, instrument_key)
+    # ── Symbol → instrument_key resolution ───────────────────
+    tasks     = []
     failed    = []
     not_found = 0
-
     for sym in symbols:
         key = _get_instrument_key(sym, instrument_map)
         if not key:
@@ -287,20 +360,34 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size,
         else:
             tasks.append((sym, key))
 
-    total = len(symbols)
+    total   = len(symbols)
     n_tasks = len(tasks)
+
+    # ── ETA estimate for user ─────────────────────────────────
+    # First 450 requests: ~7/sec.  Remaining: ~1/sec (30-min window)
+    if n_tasks <= 450:
+        eta_sec = max(n_tasks / 7, 1)
+    else:
+        eta_sec = (450 / 7) + (n_tasks - 450) * 1.0
+    eta_min = eta_sec / 60
+
+    st.sidebar.info(
+        f"⏱ Upstox: {n_tasks} symbols | "
+        f"ETA ~{eta_min:.1f} min\n"
+        f"Limits: 45/sec · 450/min · 1800/30min"
+    )
     status_text.text(
-        f"Upstox: {n_tasks} symbols to fetch | "
-        f"{not_found} not in master | "
-        f"Workers: {_UPSTOX_MAX_WORKERS} | Rate: {int(_UPSTOX_RATE)}/sec"
+        f"Upstox: {n_tasks} symbols | Not in master: {not_found} | "
+        f"ETA ~{eta_min:.1f} min"
     )
 
     close_map, high_map, vol_map = {}, {}, {}
     fetched_count = 0
     token_error   = False
+    _t_start      = time.monotonic()
 
-    # ── Parallel fetch with TokenBucket rate limiter ─────────
-    rate_limiter = _TokenBucket(max_rate=_UPSTOX_RATE)
+    # ── Parallel fetch — MultiWindowRateLimiter ───────────────
+    rate_limiter = _MultiWindowRateLimiter()
 
     with ThreadPoolExecutor(max_workers=_UPSTOX_MAX_WORKERS) as executor:
         future_map = {
@@ -315,7 +402,7 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size,
             try:
                 sym_result, df = future.result()
             except ValueError:
-                # Token expired mid-download — abort all
+                # Token expired — abort immediately
                 executor.shutdown(wait=False, cancel_futures=True)
                 st.session_state.pop("upstox_token_data", None)
                 st.error("Token expired mid-download. Re-login from sidebar and retry.")
@@ -323,7 +410,8 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size,
                 break
             except Exception:
                 sym_result = future_map[future]
-                failed.append(sym_result)
+                if sym_result not in failed:
+                    failed.append(sym_result)
                 df = None
 
             fetched_count += 1
@@ -337,18 +425,21 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size,
                 if sym_result not in failed:
                     failed.append(sym_result)
 
-            # ── Progress update every 5 completions ──────────
-            if fetched_count % 5 == 0 or fetched_count == n_tasks:
-                progress = (fetched_count + not_found) / total
+            # ── Progress + live rate display every 10 fetches ─
+            if fetched_count % 10 == 0 or fetched_count == n_tasks:
+                progress      = (fetched_count + not_found) / total
+                elapsed       = time.monotonic() - _t_start
+                r1, r60, r30m = rate_limiter.current_rates()
+                remaining     = n_tasks - fetched_count
+                eta_remaining = (remaining / max(r60 / 60, 0.1)) if r60 > 0 else 0
+
                 progress_bar.progress(min(progress, 1.0))
-                rate_actual = fetched_count / max(
-                    (time.monotonic() - rate_limiter._last_time + 0.001), 0.001
-                )
                 status_text.text(
-                    f"Upstox ⚡ {int(progress*100)}% | "
-                    f"✅ {len(close_map)} fetched | "
-                    f"❌ {len(failed)} failed | "
-                    f"🔄 {fetched_count}/{n_tasks}"
+                    f"Upstox ⚡ {int(progress*100)}%  |  "
+                    f"✅ {len(close_map)}  ❌ {len(failed) - not_found}  "
+                    f"🔄 {fetched_count}/{n_tasks}  |  "
+                    f"Rate: {r1}/s · {r60}/min · {r30m}/30min  |  "
+                    f"ETA: {eta_remaining/60:.1f}min"
                 )
 
     if token_error:
@@ -357,7 +448,9 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size,
     progress_bar.progress(1.0)
     status_text.text(
         f"Done ✅ — {len(close_map)}/{total} fetched | "
-        f"Not in master: {not_found} | Failed: {len(failed) - not_found}"
+        f"Not in master: {not_found} | "
+        f"Failed: {len(failed) - not_found} | "
+        f"Time: {(time.monotonic()-_t_start)/60:.1f}min"
     )
 
     # ── Assemble aligned DataFrames ───────────────────────────
