@@ -4,15 +4,11 @@ data_service.py
 Multi-API data-fetching service for Momentum Screener.
 Supports: YFinance (live) | Upstox (LIVE) | Angel One (LIVE) | Zerodha (placeholder)
 
-UPSTOX (v1 — Sequential, Reliable):
-  - Sequential loop — time.sleep(0.05) + actual network latency (~0.5-1s/req)
-  - Real throughput: ~1-2 req/sec → naturally within all 3 Upstox limits:
-      50/sec ✅  |  500/min ✅  |  2000/30min ✅
-  - UI improvements: ETA, live speed, elapsed time, better status bar
-
 ANGEL ONE SPEED OPTIMIZATION (v2):
-  - ThreadPoolExecutor (2 workers) + TokenBucket (1.5 req/sec)
-  - JSON-body rate-limit detection with exponential backoff
+  - ThreadPoolExecutor se parallel requests (5 workers)
+  - Token Bucket Rate Limiter (3 req/sec strictly enforce)
+  - Fixed sleep hataya — ab network latency parallel mein hide hoti hai
+  - Expected speedup: 3-4x faster for large symbol lists
 """
 
 import time
@@ -190,11 +186,10 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size, progress_bar, status
 
     close_map, high_map, vol_map = {}, {}, {}
     failed, not_found = [], 0
-    total   = len(symbols)
-    _t0     = time.monotonic()   # fetch start time for ETA calc
+    total = len(symbols)
 
     for i, sym in enumerate(symbols):
-        progress       = (i + 1) / total
+        progress = (i + 1) / total
         instrument_key = _get_instrument_key(sym, instrument_map)
         if not instrument_key:
             not_found += 1
@@ -216,42 +211,19 @@ def fetch_upstox(symbols, start_date, end_date, chunk_size, progress_bar, status
             except Exception:
                 failed.append(sym)
 
-        # ── Status update every 10 symbols ───────────────────
         if i % 10 == 0 or i == total - 1:
-            elapsed    = time.monotonic() - _t0
-            done       = i + 1
-            rate_per_s = done / elapsed if elapsed > 0 else 0
-            remaining  = total - done
-            eta_s      = remaining / rate_per_s if rate_per_s > 0 else 0
-            eta_min    = eta_s / 60
-            elapsed_min= elapsed / 60
-
             progress_bar.progress(progress)
-            status_text.text(
-                f"Upstox: {int(progress*100)}%  |  "
-                f"✅ {len(close_map)}  ❌ {len(failed) - not_found}  "
-                f"🔄 {done}/{total}  |  "
-                f"Speed: {rate_per_s:.1f}/sec  |  "
-                f"Elapsed: {elapsed_min:.1f}min  |  "
-                f"ETA: {eta_min:.1f}min"
-            )
-
-        time.sleep(0.05)   # original — do not change
+            status_text.text(f"Upstox: {int(progress*100)}% | Fetched: {len(close_map)} | Failed: {len(failed)}")
+        time.sleep(0.05)
 
     progress_bar.progress(1.0)
-    elapsed_total = (time.monotonic() - _t0) / 60
-    status_text.text(
-        f"Done ✅ — {len(close_map)}/{total} fetched  |  "
-        f"Not in master: {not_found}  |  "
-        f"Failed: {len(failed) - not_found}  |  "
-        f"Total time: {elapsed_total:.1f} min"
-    )
+    status_text.text(f"Done - {len(close_map)}/{total} fetched | Not in master: {not_found}")
 
     all_idx = pd.bdate_range(start=start_date, end=end_date)
     close  = pd.DataFrame({s: v.reindex(all_idx) for s, v in close_map.items()}, index=all_idx)
     high   = pd.DataFrame({s: v.reindex(all_idx) for s, v in high_map.items()},  index=all_idx)
     volume = pd.DataFrame({s: v.reindex(all_idx) for s, v in vol_map.items()},   index=all_idx)
-
+    
     return close, high, volume, failed
 
 
