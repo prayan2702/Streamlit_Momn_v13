@@ -504,21 +504,20 @@ html, body, [class*="css"] {
     font-size: 13px;
     padding: 12px 20px;
     border-radius: var(--radius-md);
-    text-decoration: none;
+    text-decoration: none !important;
     margin: 6px 0;
     transition: opacity .2s, transform .15s;
     border: none;
+    color: #ffffff !important;
 }
-.qlink-btn:hover { opacity: .9; transform: translateY(-1px); }
+.qlink-btn:hover { opacity: .9; transform: translateY(-1px); color: #ffffff !important; }
 .qlink-rebalancer {
     background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
-    color: #fff;
     border: 1px solid rgba(255,255,255,.1);
     box-shadow: 0 4px 12px rgba(26,35,126,.25);
 }
 .qlink-dashboard {
     background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%);
-    color: #fff;
     border: 1px solid rgba(255,255,255,.1);
     box-shadow: 0 4px 12px rgba(124,58,237,.25);
 }
@@ -631,6 +630,17 @@ def load_symbols_from_github(universe: str) -> list:
     df = pd.read_csv(url)
     df['Yahoo_Symbol'] = df['Symbol'].astype(str).str.strip() + '.NS'
     return df['Yahoo_Symbol'].tolist()
+
+# ── Always-include symbols (added to every universe) ──────────
+EXTRA_SYMBOLS = ["GOLDBEES.NS", "SILVERBEES.NS"]
+
+def add_extra_symbols(syms: list) -> list:
+    """Append GOLDBEES & SILVERBEES if not already present."""
+    result = list(syms)
+    for s in EXTRA_SYMBOLS:
+        if s not in result:
+            result.append(s)
+    return result
 
 def build_dates(end_date: datetime.date) -> dict:
     from dateutil.relativedelta import relativedelta
@@ -1000,9 +1010,10 @@ if st.session_state.current_step == 1:
                 eq_df = parse_equity_csv(uploaded)
                 st.session_state.eq_df  = eq_df
                 syms_ns = [s + ".NS" for s in eq_df["SYMBOL"].tolist()]
+                syms_ns = add_extra_symbols(syms_ns)
                 st.session_state.symbols = syms_ns
                 st.session_state.universe_label = f"AllNSE (CSV — {len(syms_ns):,} stocks)"
-                st.success(f"✅ CSV loaded: **{len(syms_ns):,}** EQ stocks")
+                st.success(f"✅ CSV loaded: **{len(syms_ns):,}** EQ stocks (incl. GOLDBEES & SILVERBEES)")
                 st.dataframe(eq_df[["SYMBOL","NAME OF COMPANY"]].head(20),
                              use_container_width=True, height=280)
             except Exception as e:
@@ -1010,6 +1021,16 @@ if st.session_state.current_step == 1:
 
         if not st.session_state.symbols:
             st.info("💡 CSV upload nahi hua — GitHub fallback (NSE_EQ_ALL.csv) use hoga screener run pe.")
+            st.markdown("""
+            <div style="background:var(--amber-bg);border:1px solid #fcd34d;border-radius:var(--radius-md);
+                        padding:10px 16px;font-size:12.5px;color:#92400e;margin-top:6px;">
+            ➕ <b>Auto-included:</b> &nbsp;
+            <span style="background:white;border:1px solid #fcd34d;border-radius:12px;padding:2px 10px;font-weight:700;">🥇 GOLDBEES</span>
+            &nbsp;
+            <span style="background:white;border:1px solid #fcd34d;border-radius:12px;padding:2px 10px;font-weight:700;">🥈 SILVERBEES</span>
+            &nbsp; — har universe ke saath automatically add honge
+            </div>
+            """, unsafe_allow_html=True)
         else:
             n = len(st.session_state.symbols)
             st.markdown(f"""<div class="metric-row">
@@ -1019,16 +1040,26 @@ if st.session_state.current_step == 1:
 
     # ── Other universes: auto-fetch info ─────────────────────
     else:
-        st.info(f"📡 **{chosen_u}** ki symbol list screener run pe GitHub se auto-load hogi.\n\n"
-                f"CSV upload ki zaroorat nahi hai.")
+        st.info(f"📡 **{chosen_u}** ki symbol list screener run pe GitHub se auto-load hogi. CSV upload ki zaroorat nahi hai.")
+        st.markdown("""
+        <div style="background:var(--amber-bg);border:1px solid #fcd34d;border-radius:var(--radius-md);
+                    padding:10px 16px;font-size:12.5px;color:#92400e;margin-top:6px;">
+        ➕ <b>Auto-included:</b> &nbsp;
+        <span style="background:white;border:1px solid #fcd34d;border-radius:12px;padding:2px 10px;font-weight:700;">🥇 GOLDBEES</span>
+        &nbsp;
+        <span style="background:white;border:1px solid #fcd34d;border-radius:12px;padding:2px 10px;font-weight:700;">🥈 SILVERBEES</span>
+        &nbsp; — har universe ke saath automatically add honge
+        </div>
+        """, unsafe_allow_html=True)
         # Pre-load symbols when user confirms
         if st.button("✅ Load Symbol List", type="primary"):
             with st.spinner(f"Loading {chosen_u} from GitHub…"):
                 try:
                     syms_ns = load_symbols_from_github(chosen_u)
+                    syms_ns = add_extra_symbols(syms_ns)
                     st.session_state.symbols = syms_ns
                     st.session_state.universe_label = f"{chosen_u} ({len(syms_ns)} stocks)"
-                    st.success(f"✅ {chosen_u}: **{len(syms_ns)}** symbols loaded")
+                    st.success(f"✅ {chosen_u}: **{len(syms_ns)}** symbols loaded (incl. GOLDBEES & SILVERBEES)")
                 except Exception as e:
                     st.error(f"Symbol load failed: {e}")
 
@@ -1120,6 +1151,7 @@ elif st.session_state.current_step == 2:
                         syms_ns = df_sym['Yahoo_Symbol'].tolist()
                     else:
                         syms_ns = load_symbols_from_github(U)
+                    syms_ns = add_extra_symbols(syms_ns)
                     st.session_state.symbols = syms_ns
                 except Exception as e:
                     st.error(f"Symbol list load failed: {e}"); st.stop()
@@ -1139,6 +1171,10 @@ elif st.session_state.current_step == 2:
           <span style="background:var(--violet-bg);color:var(--violet);border:1px solid #c4b5fd;
                        border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;">
             📡 Source: {api_source}
+          </span>
+          <span style="background:var(--amber-bg);color:#92400e;border:1px solid #fcd34d;
+                       border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;">
+            🥇 GOLDBEES &amp; 🥈 SILVERBEES included
           </span>
         </div>
         """, unsafe_allow_html=True)
@@ -1521,6 +1557,7 @@ elif st.session_state.current_step == 3:
             st.markdown(f"""
             <a href="{APPS_SCRIPT_URL}" target="_blank" class="qlink-btn qlink-rebalancer"
                style="display:block;text-decoration:none;font-weight:700;font-size:14px;
+                      color:#ffffff !important;
                       padding:13px 20px;border-radius:10px;text-align:center;margin:4px 0;">
               ⚖️ Open Portfolio Rebalancer
             </a>
